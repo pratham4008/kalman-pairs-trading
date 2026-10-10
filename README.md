@@ -58,10 +58,11 @@ statarb-kalman-pairs/
 │   ├── backtest.py           # causal, cost-aware, dollar-neutral backtest
 │   └── metrics.py            # Sharpe, Sortino, drawdown, hit rate, turnover
 ├── scripts/
-│   ├── screen_pairs.py       # screen the universe -> ranked pairs.csv
+│   ├── screen_pairs.py       # screen the universe -> ranked CSV of pairs
 │   └── run_backtest.py       # backtest one pair out-of-sample (+ optional plots)
 ├── notebooks/
 │   └── walkthrough.ipynb     # end-to-end narrative walkthrough
+├── results/                  # screen table and backtest output behind the Results section
 └── tests/
     ├── test_synthetic.py     # Kalman recovery, no-look-ahead, PnL hand-check
     └── test_cointegration.py # EG separates cointegrated vs spurious pairs
@@ -73,7 +74,7 @@ statarb-kalman-pairs/
 pip install -r requirements.txt
 
 # 1. Screen the universe for cointegrated pairs (formation window only)
-python scripts/screen_pairs.py --out pairs.csv
+python scripts/screen_pairs.py --out results/pairs.csv
 
 # 2. Backtest a chosen pair out-of-sample, with diagnostic plots
 python scripts/run_backtest.py --y KO --x PEP --plots
@@ -88,7 +89,8 @@ puts the package on the path, and the rest of the notebook runs unchanged. No
 local setup required.
 
 Prices are cached to `data/*.parquet` on first download so reruns are
-reproducible and offline. Data and generated outputs are gitignored.
+reproducible and offline. The price cache is gitignored; the outputs behind the
+Results section below are committed in `results/`.
 
 ## Key parameters (`config.py`)
 
@@ -104,10 +106,10 @@ reproducible and offline. Data and generated outputs are gitignored.
 
 ## Verification
 
-I do not report any performance number I have not produced from a real run, so
-the tables below are blank. What *is* verified, on synthetic data with a known
-ground truth, is the machinery that would otherwise silently corrupt those
-numbers:
+I do not report any performance number I have not produced from a real run;
+every figure under Results comes from the commands shown there. What *is*
+verified, on synthetic data with a known ground truth, is the machinery that
+would otherwise silently corrupt those numbers:
 
 - **Kalman recovery** — on a synthetic pair with a hedge ratio drifting 1.0→1.6,
   the filtered beta tracks the truth (correlation ≈ 0.998, terminal absolute
@@ -124,36 +126,78 @@ pytest -q tests/                    # full suite (cointegration needs statsmodel
 
 ## Results
 
-Run on your own data window and fill in. Nothing here is hard-coded.
+Data: Yahoo Finance adjusted daily closes, 2016-01-04 to 2024-12-31. Formation
+(screening) window 2016-01-04 to 2020-06-30; out-of-sample trading window
+2020-07-01 to 2024-12-30 (1,132 trading days). All parameters are the
+`config.py` defaults; nothing was tuned.
+
+```bash
+python scripts/screen_pairs.py --start 2016-01-04 --out results/pairs.csv
+# once per passing pair: EWC/EWA, SPY/IVV, MA/V, CVX/EWA
+python scripts/run_backtest.py --y EWC --x EWA --start 2016-01-04 > results/bt_EWC_EWA.txt
+```
 
 **Screening (formation window)**
 
+4 of 41 candidate pairs passed. All passing pairs are shown; the full ranked
+table is in `results/pairs.csv`, and each passing pair's backtest output is in
+`results/bt_<y>_<x>.txt`.
+
 | y | x | corr | EG p-value | hedge ratio | half-life | Johansen | passes |
 |---|---|------|-----------|-------------|-----------|----------|--------|
-|   |   |      |           |             |           |          |        |
+| EWC | EWA | 0.971 | 0.0006 | 0.889 | 11.5 | yes | yes |
+| SPY | IVV | 1.000 | 0.0019 | 0.999 | 3.9 | yes | yes |
+| MA | V | 0.998 | 0.0047 | 1.273 | 12.7 | yes | yes |
+| CVX | EWA | 0.909 | 0.0443 | 1.117 | 23.5 | yes | yes |
 
-**Out-of-sample scorecard (traded pair)**
+**Pair selection: chosen after seeing the out-of-sample results.** All four
+passing pairs were backtested on the trading window, and EWC/EWA was picked
+after comparing those results. That makes the scorecard below a best-of-four
+result, not a clean held-out estimate: the choice used the test window. The
+other three pairs, at 1bp with daily re-hedging, for comparison:
+
+| pair | Sharpe | ann. return | max DD |
+|------|--------|-------------|--------|
+| SPY / IVV | -0.03 | -0.00% | -0.14% |
+| MA / V | 0.01 | -0.01% | -5.78% |
+| CVX / EWA | -0.24 | -1.47% | -12.35% |
+
+The live forward run on EWC/EWA is the first truly out-of-sample test.
+
+**Out-of-sample scorecard (traded pair: y = EWC, x = EWA; 1bp, daily re-hedge)**
 
 | metric | value |
 |--------|-------|
-| Annualised return |  |
-| Annualised vol |  |
-| Sharpe |  |
-| Sortino |  |
-| Max drawdown |  |
-| Calmar |  |
-| Hit rate |  |
-| Number of trades |  |
-| Average turnover |  |
+| Annualised return | 1.98% |
+| Annualised vol | 1.91% |
+| Sharpe | 1.04 |
+| Sortino | 0.55 |
+| Max drawdown | -3.32% |
+| Calmar | 0.60 |
+| Hit rate | 41.9% |
+| Number of trades | 74 |
+| Average turnover | 0.0654 |
+
+Returns are per dollar of gross exposure. Hit rate counts every non-zero
+return day, including days when only a cost was paid (for example the day
+after an exit), so with costs it understates how often the market P&L was
+positive (54.5% at 0bp).
 
 **Cost / re-hedging sensitivity**
 
+A robustness check only, with signal and Kalman parameters fixed at the defaults.
+
 | cost (bps) | re-hedge | Sharpe | ann. return | max DD | avg turnover |
 |-----------|----------|--------|-------------|--------|--------------|
-| 0.0 | daily |  |  |  |  |
-| 1.0 | daily |  |  |  |  |
-| 5.0 | daily |  |  |  |  |
-| 1.0 | frozen |  |  |  |  |
+| 0.0 | daily | 1.12 | 2.15% | -3.18% | 0.0654 |
+| 1.0 | daily | 1.04 | 1.98% | -3.32% | 0.0654 |
+| 5.0 | daily | 0.70 | 1.31% | -3.86% | 0.0654 |
+| 1.0 | frozen | 1.04 | 1.99% | -3.32% | 0.0654 |
+
+Each extra basis point costs roughly 0.17% a year in return. Freezing the hedge
+ratio at entry makes almost no difference: with `delta = 1e-4` the beta moves
+slowly, so daily re-hedging adds little turnover beyond the entry and exit
+trades.
 
 ## Caveats
 

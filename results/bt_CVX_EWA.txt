@@ -1,0 +1,12 @@
+
+Pair CVX/EWA  out-of-sample (2020-07-01 -> 2024-12-30, 1132 days)
+----------------------------------------------------
+  ann_return          -0.0147
+  ann_vol              0.0555
+  sharpe              -0.2385
+  sortino             -0.0953
+  max_drawdown        -0.1235
+  hit_rate             0.4348
+  n_trades                 80
+  calmar              -0.1188
+  avg_turnover         0.0709
